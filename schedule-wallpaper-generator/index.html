@@ -1,0 +1,2760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>作息壁纸生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <!-- Tailwind 配置 -->
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#3B82F6",
+              secondary: "#10B981",
+              accent: "#8B5CF6",
+              neutral: "#1F2937",
+              "base-100": "#FFFFFF",
+            },
+            fontFamily: {
+              sans: ["Inter", "system-ui", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+
+    <style type="text/tailwindcss">
+      @layer utilities {
+        .content-auto {
+          content-visibility: auto;
+        }
+        .wallpaper-preview {
+          background-image: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        .grid-mask {
+          background-size: 20px 20px;
+          background-image: linear-gradient(
+              to right,
+              rgba(0, 0, 0, 0.05) 1px,
+              transparent 1px
+            ),
+            linear-gradient(to bottom, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+        }
+        .time-block-card {
+          backdrop-filter: blur(8px);
+          background-color: rgba(255, 255, 255, 0.7);
+        }
+        .timeline-item {
+          position: relative;
+          padding-left: 2rem;
+        }
+        .timeline-item::before {
+          content: "";
+          position: absolute;
+          left: 0.5rem;
+          top: 0;
+          bottom: 0;
+          width: 2px;
+          background-color: currentColor;
+        }
+        .timeline-dot {
+          position: absolute;
+          left: 0;
+          top: 0.5rem;
+          width: 1rem;
+          height: 1rem;
+          border-radius: 50%;
+          background-color: currentColor;
+        }
+        .loading-spinner {
+          border: 2px solid #f3f3f3;
+          border-top: 2px solid #3498db;
+          border-radius: 50%;
+          width: 20px;
+          height: 20px;
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+        .notification {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 1000;
+          min-width: 300px;
+          max-width: 500px;
+          padding: 16px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+          transform: translateX(100%);
+          transition: transform 0.3s ease-in-out;
+        }
+        .notification.show {
+          transform: translateX(0);
+        }
+        .notification.success {
+          background-color: #10b981;
+          color: white;
+        }
+        .notification.error {
+          background-color: #ef4444;
+          color: white;
+        }
+        .notification.warning {
+          background-color: #f59e0b;
+          color: white;
+        }
+        .notification.info {
+          background-color: #3b82f6;
+          color: white;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 font-sans">
+    <main class="container mx-auto px-4 py-8">
+      <!-- 功能介绍横幅 -->
+      <div
+        class="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl p-6 mb-8 shadow-lg"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-2xl font-bold mb-2">🎨 时间规划壁纸生成器</h2>
+            <p class="text-blue-100">
+              创建个性化的作息时间表壁纸，让时间管理更加直观和美观
+            </p>
+          </div>
+          <div class="hidden md:block">
+            <div class="flex space-x-4 text-sm">
+              <div class="text-center">
+                <div class="text-2xl font-bold">4</div>
+                <div class="text-blue-200">布局选项</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold">12</div>
+                <div class="text-blue-200">颜色主题</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold">∞</div>
+                <div class="text-blue-200">自定义</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <!-- 左侧：数据输入区域 -->
+        <div class="lg:col-span-3 bg-white rounded-xl shadow-lg p-6">
+          <h2 class="text-lg font-semibold text-neutral mb-4 flex items-center">
+            <i class="fa fa-list-alt text-primary mr-2"></i>输入作息数据
+          </h2>
+
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2"
+              >选择输入方式</label
+            >
+            <div class="flex space-x-4">
+              <button
+                id="manualInputBtn"
+                class="flex-1 py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+              >
+                <i class="fa fa-keyboard-o mr-1"></i> 手动输入
+              </button>
+              <button
+                id="uploadFileBtn"
+                class="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+              >
+                <i class="fa fa-upload mr-1"></i> 上传文件
+              </button>
+            </div>
+          </div>
+
+          <!-- 手动输入表单 -->
+          <div id="manualInputForm" class="space-y-4">
+            <div class="mb-4">
+              <label
+                for="title"
+                class="block text-sm font-medium text-gray-700 mb-1"
+                >壁纸标题</label
+              >
+              <input
+                type="text"
+                id="title"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                placeholder="我的作息表"
+              />
+            </div>
+
+            <div class="mb-4">
+              <label
+                for="subtitle"
+                class="block text-sm font-medium text-gray-700 mb-1"
+                >副标题</label
+              >
+              <input
+                type="text"
+                id="subtitle"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                placeholder="保持规律，提升效率"
+              />
+              <div class="mt-2 flex items-center">
+                <input
+                  type="checkbox"
+                  id="hideSubtitle"
+                  class="mr-2 rounded border-gray-300 text-primary focus:ring-primary"
+                />
+                <label for="hideSubtitle" class="text-sm text-gray-600">
+                  隐藏副标题
+                </label>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-1"
+                >添加时间段</label
+              >
+              <div class="time-block grid grid-cols-2 gap-3 mb-2">
+                <div>
+                  <input
+                    type="time"
+                    class="start-time w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="time"
+                    class="end-time w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  />
+                </div>
+              </div>
+              <div>
+                <input
+                  type="text"
+                  class="activity w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  placeholder="活动描述"
+                />
+              </div>
+              <button
+                id="addTimeBtn"
+                class="mt-2 w-full py-2 px-4 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors flex justify-center items-center"
+              >
+                <i class="fa fa-plus mr-1"></i> 添加时间段
+              </button>
+            </div>
+
+            <div class="border-t border-gray-200 pt-4">
+              <button
+                id="updatePreviewBtn"
+                class="w-full py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex justify-center items-center"
+              >
+                <i class="fa fa-refresh mr-1"></i> 更新预览
+              </button>
+            </div>
+          </div>
+
+          <!-- 上传文件表单 (默认隐藏) -->
+          <div id="uploadFileForm" class="hidden space-y-4">
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2"
+                >支持的格式: CSV, XLSX</label
+              >
+              <div class="relative">
+                <div class="flex items-center justify-center w-full">
+                  <label
+                    for="file-upload"
+                    class="flex flex-col items-center justify-center w-full h-40 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors"
+                  >
+                    <div
+                      class="flex flex-col items-center justify-center pt-5 pb-6"
+                    >
+                      <i
+                        class="fa fa-cloud-upload text-4xl text-gray-400 mb-2"
+                      ></i>
+                      <p class="mb-2 text-sm text-gray-500">
+                        <span class="font-semibold">点击上传文件</span> 或拖放
+                      </p>
+                      <p class="text-xs text-gray-500">支持 CSV, XLSX</p>
+                    </div>
+                    <input
+                      id="file-upload"
+                      type="file"
+                      class="hidden"
+                      accept=".csv,.xlsx,.xls"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="border-t border-gray-200 pt-4 flex space-x-2">
+              <button
+                id="parseFileBtn"
+                class="flex-1 py-2 px-4 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex justify-center items-center"
+              >
+                <i class="fa fa-refresh mr-1"></i> 解析文件
+              </button>
+              <button
+                id="downloadTemplateBtn"
+                class="flex-1 py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex justify-center items-center"
+              >
+                <i class="fa fa-download mr-1"></i> 下载模板
+              </button>
+            </div>
+          </div>
+
+          <!-- 已添加的时间段列表 -->
+          <div class="mt-8">
+            <h3
+              class="text-md font-semibold text-neutral mb-3 flex items-center justify-between"
+            >
+              <span>已添加的时间段</span>
+              <span id="scheduleCount" class="text-sm text-gray-500">(0)</span>
+            </h3>
+            <div id="scheduleList" class="space-y-2 max-h-64 overflow-y-auto">
+              <!-- 时间段列表将在这里动态生成 -->
+            </div>
+          </div>
+
+          <!-- 预设模板 -->
+          <div class="mt-8">
+            <h3 class="text-md font-semibold text-neutral mb-3">快速模板</h3>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                class="template-btn py-2 px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm text-center"
+                data-template="student"
+              >
+                学生日常
+              </button>
+              <button
+                class="template-btn py-2 px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm text-center"
+                data-template="office"
+              >
+                职场白领
+              </button>
+              <button
+                class="template-btn py-2 px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm text-center"
+                data-template="freelancer"
+              >
+                自由职业者
+              </button>
+              <button
+                class="template-btn py-2 px-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors text-sm text-center"
+                data-template="fitness"
+              >
+                健身计划
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 中间：预览区域 -->
+        <div class="lg:col-span-6">
+          <div class="bg-white rounded-xl shadow-lg p-6 h-full">
+            <h2
+              class="text-lg font-semibold text-neutral mb-4 flex items-center"
+            >
+              <i class="fa fa-eye text-primary mr-2"></i>壁纸预览
+            </h2>
+
+            <div
+              class="relative aspect-[16/9] bg-gray-100 rounded-lg overflow-hidden grid-mask"
+            >
+              <div
+                id="wallpaperPreview"
+                class="wallpaper-preview absolute inset-0 flex flex-col p-8"
+              >
+                <!-- 壁纸内容将在这里动态生成 -->
+                <div class="text-center mb-8">
+                  <h2
+                    id="previewTitle"
+                    class="text-4xl font-bold text-neutral mb-2"
+                  >
+                    我的作息表
+                  </h2>
+                  <p id="previewSubtitle" class="text-gray-600">
+                    保持规律，提升效率
+                  </p>
+                </div>
+
+                <div
+                  id="scheduleContainer"
+                  class="grid grid-cols-2 gap-4 h-full"
+                >
+                  <!-- 时间段内容将动态生成 -->
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-6 flex flex-col sm:flex-row justify-center gap-4">
+              <button
+                id="downloadBtn"
+                class="py-3 px-6 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center"
+              >
+                <i class="fa fa-download mr-2"></i> 下载壁纸
+              </button>
+              <button
+                id="fullscreenBtn"
+                class="py-3 px-6 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition-colors flex items-center justify-center"
+              >
+                <i class="fa fa-expand mr-2"></i> 全屏预览
+              </button>
+            </div>
+
+            <!-- 使用提示 -->
+            <div class="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <h4
+                class="text-sm font-semibold text-blue-800 mb-2 flex items-center"
+              >
+                <i class="fa fa-lightbulb-o mr-2"></i>使用提示
+              </h4>
+              <ul class="text-sm text-blue-700 space-y-1">
+                <li>• 点击左侧时间段列表中的编辑按钮可修改已添加的时间段</li>
+                <li>• 选择不同的布局方式来改变壁纸展示效果</li>
+                <li>• 背景颜色会覆盖默认渐变，选择透明可恢复默认渐变效果</li>
+                <li>• 支持CSV和Excel文件导入，可下载模板文件参考格式</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：样式设置区域 -->
+        <div class="lg:col-span-3 bg-white rounded-xl shadow-lg p-6">
+          <h2 class="text-lg font-semibold text-neutral mb-4 flex items-center">
+            <i class="fa fa-paint-brush text-primary mr-2"></i>样式设置
+          </h2>
+
+          <!-- 布局选择 -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2"
+              >选择布局</label
+            >
+            <div class="space-y-2">
+              <label
+                class="flex items-center p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <input
+                  type="radio"
+                  name="layout"
+                  class="mr-2"
+                  value="time-block"
+                  checked
+                />
+                <span>按时间段划分</span>
+              </label>
+              <label
+                class="flex items-center p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <input
+                  type="radio"
+                  name="layout"
+                  class="mr-2"
+                  value="timeline"
+                />
+                <span>时间轴布局</span>
+              </label>
+              <label
+                class="flex items-center p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <input type="radio" name="layout" class="mr-2" value="grid" />
+                <span>网格布局</span>
+              </label>
+              <label
+                class="flex items-center p-3 border rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <input type="radio" name="layout" class="mr-2" value="table" />
+                <span>表格布局</span>
+              </label>
+            </div>
+
+            <!-- 表格布局配置 -->
+            <div
+              id="tableLayoutConfig"
+              class="mt-4 p-3 bg-gray-50 rounded-lg hidden"
+            >
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                表格列数
+              </label>
+              <div class="flex space-x-2">
+                <label class="flex items-center">
+                  <input
+                    type="radio"
+                    name="tableColumns"
+                    value="1"
+                    class="mr-1"
+                  />
+                  <span class="text-sm">单列</span>
+                </label>
+                <label class="flex items-center">
+                  <input
+                    type="radio"
+                    name="tableColumns"
+                    value="2"
+                    class="mr-1"
+                    checked
+                  />
+                  <span class="text-sm">双列</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="mb-6">
+            <div class="space-y-2"></div>
+          </div>
+
+          <!-- 字体设置 -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2"
+              >字体设置</label
+            >
+            <select
+              id="fontSelect"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary mb-3"
+            >
+              <option value="Inter">Inter (默认)</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Montserrat">Montserrat</option>
+              <option value="Open Sans">Open Sans</option>
+            </select>
+
+            <div class="flex items-center justify-between mb-2">
+              <label class="text-sm text-gray-700">字体大小</label>
+              <span id="fontSizeValue" class="text-sm font-medium">16px</span>
+            </div>
+            <input
+              id="fontSizeSlider"
+              type="range"
+              min="12"
+              max="24"
+              value="16"
+              class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary"
+            />
+          </div>
+
+          <!-- 颜色设置 -->
+          <div class="mb-6">
+            <label class="block text-sm font-medium text-gray-700 mb-2"
+              >背景颜色</label
+            >
+            <p class="text-xs text-gray-500 mb-3">
+              选择背景颜色会覆盖默认渐变效果，选择透明可恢复默认渐变
+            </p>
+            <div class="grid grid-cols-6 gap-2 mb-3">
+              <button
+                class="color-btn w-full h-8 rounded-full bg-blue-500 border-2 border-white hover:ring-2 hover:ring-blue-500 transition-all shadow-md"
+                data-color="blue-500"
+                title="蓝色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-green-500 border-2 border-white hover:ring-2 hover:ring-green-500 transition-all shadow-md"
+                data-color="green-500"
+                title="绿色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-purple-500 border-2 border-white hover:ring-2 hover:ring-purple-500 transition-all shadow-md"
+                data-color="purple-500"
+                title="紫色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-yellow-500 border-2 border-white hover:ring-2 hover:ring-yellow-500 transition-all shadow-md"
+                data-color="yellow-500"
+                title="黄色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-red-500 border-2 border-white hover:ring-2 hover:ring-red-500 transition-all shadow-md"
+                data-color="red-500"
+                title="红色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-indigo-500 border-2 border-white hover:ring-2 hover:ring-indigo-500 transition-all shadow-md"
+                data-color="indigo-500"
+                title="靛蓝"
+              ></button>
+            </div>
+            <div class="grid grid-cols-6 gap-2">
+              <button
+                class="color-btn w-full h-8 rounded-full bg-teal-500 border-2 border-white hover:ring-2 hover:ring-teal-500 transition-all shadow-md"
+                data-color="teal-500"
+                title="青色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-pink-500 border-2 border-white hover:ring-2 hover:ring-pink-500 transition-all shadow-md"
+                data-color="pink-500"
+                title="粉色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-orange-500 border-2 border-white hover:ring-2 hover:ring-orange-500 transition-all shadow-md"
+                data-color="orange-500"
+                title="橙色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-gray-800 border-2 border-white hover:ring-2 hover:ring-gray-800 transition-all shadow-md"
+                data-color="gray-800"
+                title="深灰"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full bg-white border-2 border-gray-300 hover:ring-2 hover:ring-gray-400 transition-all shadow-md"
+                data-color="white"
+                title="白色"
+              ></button>
+              <button
+                class="color-btn w-full h-8 rounded-full border-2 border-gray-300 hover:ring-2 hover:ring-gray-400 transition-all shadow-md"
+                data-color="transparent"
+                title="透明（使用默认渐变）"
+                style="
+                  background: linear-gradient(
+                      45deg,
+                      #f0f0f0 25%,
+                      transparent 25%
+                    ),
+                    linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
+                    linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
+                    linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+                  background-size: 8px 8px;
+                  background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+                "
+              ></button>
+            </div>
+          </div>
+
+          <!-- 高级设置 -->
+          <div>
+            <button
+              id="advancedSettingsBtn"
+              class="w-full py-2 text-left text-primary hover:text-primary/80 transition-colors flex items-center justify-between"
+            >
+              <span>高级设置</span>
+              <i class="fa fa-chevron-down text-xs"></i>
+            </button>
+            <div id="advancedSettingsPanel" class="hidden mt-4 space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2"
+                  >壁纸分辨率</label
+                >
+                <select
+                  id="resolutionSelect"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                >
+                  <option value="1920x1080">1920 x 1080 (Full HD)</option>
+                  <option value="2560x1440">2560 x 1440 (QHD)</option>
+                  <option value="3840x2160">3840 x 2160 (4K)</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </div>
+              <div id="customResolutionInputs" class="hidden space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1"
+                      >宽度 (px)</label
+                    >
+                    <input
+                      id="customWidth"
+                      type="number"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                      placeholder="1920"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1"
+                      >高度 (px)</label
+                    >
+                    <input
+                      id="customHeight"
+                      type="number"
+                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                      placeholder="1080"
+                    />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2"
+                  >添加背景图片</label
+                >
+                <input
+                  id="bgImageUpload"
+                  type="file"
+                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
+                  accept="image/*"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="bg-white border-t border-gray-200 mt-12">
+      <div class="container mx-auto px-4 py-6">
+        <div class="flex flex-col md:flex-row justify-between items-center">
+          <div class="mb-4 md:mb-0">
+            <p class="text-gray-500 text-sm">
+              © 2025 时间规划作息壁纸生成器. 保留所有权利.
+            </p>
+          </div>
+          <div class="flex space-x-4">
+            <a
+              href="https://www.imruxin.com"
+              class="text-gray-400 hover:text-primary transition-colors"
+            >
+              <i class="fa fa-user text-xl"></i>
+            </a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // 存储用户数据
+      const userData = {
+        title: "我的作息表",
+        subtitle: "保持规律，提升效率",
+        hideSubtitle: false,
+        schedule: [
+          {
+            id: 1,
+            startTime: "07:00",
+            endTime: "08:00",
+            activity: "起床 & 早餐",
+          },
+          {
+            id: 2,
+            startTime: "08:00",
+            endTime: "10:00",
+            activity: "工作/学习",
+          },
+          { id: 3, startTime: "10:00", endTime: "10:15", activity: "休息" },
+          {
+            id: 4,
+            startTime: "13:00",
+            endTime: "15:00",
+            activity: "工作/学习",
+          },
+          { id: 5, startTime: "15:00", endTime: "15:15", activity: "下午茶" },
+          {
+            id: 6,
+            startTime: "15:15",
+            endTime: "18:00",
+            activity: "工作/学习",
+          },
+          { id: 7, startTime: "18:00", endTime: "19:00", activity: "晚餐" },
+          {
+            id: 8,
+            startTime: "19:00",
+            endTime: "20:30",
+            activity: "休闲/运动",
+          },
+          { id: 9, startTime: "20:30", endTime: "22:00", activity: "自由时间" },
+          {
+            id: 10,
+            startTime: "22:00",
+            endTime: "23:00",
+            activity: "准备睡觉",
+          },
+          { id: 11, startTime: "23:00", endTime: "07:00", activity: "睡眠" },
+        ],
+        layout: "time-block",
+        fontSize: 16,
+        fontFamily: "Inter",
+        bgColor: "transparent",
+        resolution: "1920x1080",
+        customWidth: 1920,
+        customHeight: 1080,
+        tableColumns: 2, // 表格列数配置
+      };
+
+      // 编辑状态管理
+      let editingScheduleId = null;
+      let nextScheduleId = 12;
+
+      /**
+       * 标准化时间格式
+       * 将 "7:00" 转换为 "07:00"，确保时间格式一致
+       * @param {string} timeStr - 时间字符串
+       * @returns {string} - 标准化后的时间字符串 (HH:MM)
+       */
+      function normalizeTime(timeStr) {
+        if (!timeStr) return "00:00";
+
+        const [hours, minutes] = timeStr.split(":");
+        const normalizedHours = hours.padStart(2, "0");
+        const normalizedMinutes = (minutes || "00").padStart(2, "0");
+
+        return `${normalizedHours}:${normalizedMinutes}`;
+      }
+
+      /**
+       * 标准化Excel时间格式
+       * 处理Excel可能的各种时间格式，包括数字格式和文本格式
+       * @param {string|number} timeValue - Excel中的时间值
+       * @returns {string} - 标准化后的时间字符串 (HH:MM)
+       */
+      function normalizeExcelTime(timeValue) {
+        if (!timeValue && timeValue !== 0) return "00:00";
+
+        // 转换为字符串
+        let timeStr = timeValue.toString().trim();
+
+        // 如果是数字格式（Excel的时间序列值）
+        if (!isNaN(timeValue) && timeValue >= 0 && timeValue <= 1) {
+          // Excel时间是以天为单位的小数，需要转换为小时:分钟
+          const totalMinutes = Math.round(timeValue * 24 * 60);
+          const hours = Math.floor(totalMinutes / 60);
+          const minutes = totalMinutes % 60;
+          return `${hours.toString().padStart(2, "0")}:${minutes
+            .toString()
+            .padStart(2, "0")}`;
+        }
+
+        // 处理常见的时间格式
+        // 移除可能的AM/PM标记
+        timeStr = timeStr.replace(/\s*(AM|PM|上午|下午)\s*/gi, "");
+
+        // 处理 "7:00" 或 "07:00" 格式
+        if (timeStr.includes(":")) {
+          const parts = timeStr.split(":");
+          if (parts.length >= 2) {
+            const hours = parseInt(parts[0]) || 0;
+            const minutes = parseInt(parts[1]) || 0;
+            return `${hours.toString().padStart(2, "0")}:${minutes
+              .toString()
+              .padStart(2, "0")}`;
+          }
+        }
+
+        // 处理纯数字格式（如 "700" 表示 "7:00"）
+        if (/^\d{3,4}$/.test(timeStr)) {
+          if (timeStr.length === 3) {
+            // "700" -> "7:00"
+            const hours = parseInt(timeStr.substring(0, 1));
+            const minutes = parseInt(timeStr.substring(1, 3));
+            return `${hours.toString().padStart(2, "0")}:${minutes
+              .toString()
+              .padStart(2, "0")}`;
+          } else if (timeStr.length === 4) {
+            // "1430" -> "14:30"
+            const hours = parseInt(timeStr.substring(0, 2));
+            const minutes = parseInt(timeStr.substring(2, 4));
+            return `${hours.toString().padStart(2, "0")}:${minutes
+              .toString()
+              .padStart(2, "0")}`;
+          }
+        }
+
+        // 处理单独的小时数（如 "7" 表示 "7:00"）
+        if (/^\d{1,2}$/.test(timeStr)) {
+          const hours = parseInt(timeStr);
+          if (hours >= 0 && hours <= 23) {
+            return `${hours.toString().padStart(2, "0")}:00`;
+          }
+        }
+
+        // 如果都不匹配，尝试使用原始的normalizeTime函数
+        return normalizeTime(timeStr);
+      }
+
+      /**
+       * 时间排序函数
+       * 将时间字符串转换为分钟数进行比较，正确处理跨天情况
+       * @param {string} timeStr - 时间字符串 (HH:MM 或 H:MM)
+       * @returns {number} - 分钟数
+       */
+      function timeToMinutes(timeStr) {
+        const normalizedTime = normalizeTime(timeStr);
+        const [hours, minutes] = normalizedTime.split(":").map(Number);
+        return hours * 60 + minutes;
+      }
+
+      /**
+       * 智能时间排序函数
+       * 考虑跨天情况的时间排序
+       * @param {Array} schedule - 时间表数组
+       * @returns {Array} - 排序后的时间表
+       */
+      function sortScheduleByTime(schedule) {
+        return [...schedule].sort((a, b) => {
+          const aStart = timeToMinutes(a.startTime);
+          const bStart = timeToMinutes(b.startTime);
+
+          // 如果开始时间相同，按结束时间排序
+          if (aStart === bStart) {
+            const aEnd = timeToMinutes(a.endTime);
+            const bEnd = timeToMinutes(b.endTime);
+
+            // 处理跨天情况
+            const aEndAdjusted = aEnd < aStart ? aEnd + 24 * 60 : aEnd;
+            const bEndAdjusted = bEnd < bStart ? bEnd + 24 * 60 : bEnd;
+
+            return aEndAdjusted - bEndAdjusted;
+          }
+
+          return aStart - bStart;
+        });
+      }
+
+      // 页面交互逻辑
+      document.addEventListener("DOMContentLoaded", function () {
+        // 手动输入和上传文件切换
+        const manualInputBtn = document.getElementById("manualInputBtn");
+        const uploadFileBtn = document.getElementById("uploadFileBtn");
+        const manualInputForm = document.getElementById("manualInputForm");
+        const uploadFileForm = document.getElementById("uploadFileForm");
+
+        manualInputBtn.addEventListener("click", function () {
+          manualInputBtn.classList.remove("bg-gray-200", "text-gray-700");
+          manualInputBtn.classList.add("bg-primary", "text-white");
+
+          uploadFileBtn.classList.remove("bg-primary", "text-white");
+          uploadFileBtn.classList.add("bg-gray-200", "text-gray-700");
+
+          manualInputForm.classList.remove("hidden");
+          uploadFileForm.classList.add("hidden");
+        });
+
+        uploadFileBtn.addEventListener("click", function () {
+          uploadFileBtn.classList.remove("bg-gray-200", "text-gray-700");
+          uploadFileBtn.classList.add("bg-primary", "text-white");
+
+          manualInputBtn.classList.remove("bg-primary", "text-white");
+          manualInputBtn.classList.add("bg-gray-200", "text-gray-700");
+
+          uploadFileForm.classList.remove("hidden");
+          manualInputForm.classList.add("hidden");
+        });
+
+        /**
+         * 实现时间段添加/编辑功能
+         * 支持新增时间段和编辑现有时间段
+         */
+        const addTimeBtn = document.getElementById("addTimeBtn");
+        addTimeBtn.addEventListener("click", function () {
+          const startTimeInput = document.querySelector(".start-time");
+          const endTimeInput = document.querySelector(".end-time");
+          const activityInput = document.querySelector(".activity");
+
+          // 时间格式验证 (HH:MM)
+          const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+          if (!timeRegex.test(startTimeInput.value)) {
+            showNotification("开始时间格式不正确，请使用HH:MM格式", "error");
+            return;
+          }
+          if (!timeRegex.test(endTimeInput.value)) {
+            showNotification("结束时间格式不正确，请使用HH:MM格式", "error");
+            return;
+          }
+
+          // 验证开始时间和结束时间逻辑
+          const startMinutes =
+            parseInt(startTimeInput.value.split(":")[0]) * 60 +
+            parseInt(startTimeInput.value.split(":")[1]);
+          const endMinutes =
+            parseInt(endTimeInput.value.split(":")[0]) * 60 +
+            parseInt(endTimeInput.value.split(":")[1]);
+
+          // 非跨天情况验证
+          if (
+            endMinutes <= startMinutes &&
+            !(startMinutes >= 22 * 60 && endMinutes <= 6 * 60)
+          ) {
+            showNotification("结束时间必须晚于开始时间", "error");
+            return;
+          }
+
+          if (
+            startTimeInput.value &&
+            endTimeInput.value &&
+            activityInput.value
+          ) {
+            if (editingScheduleId) {
+              // 编辑模式：更新现有时间段
+              const scheduleIndex = userData.schedule.findIndex(
+                (item) => item.id === editingScheduleId
+              );
+              if (scheduleIndex !== -1) {
+                userData.schedule[scheduleIndex] = {
+                  id: editingScheduleId,
+                  startTime: normalizeTime(startTimeInput.value),
+                  endTime: normalizeTime(endTimeInput.value),
+                  activity: activityInput.value,
+                };
+                showNotification("时间段已更新", "success");
+                exitEditMode();
+              }
+            } else {
+              // 新增模式：添加新时间段
+              userData.schedule.push({
+                id: nextScheduleId++,
+                startTime: normalizeTime(startTimeInput.value),
+                endTime: normalizeTime(endTimeInput.value),
+                activity: activityInput.value,
+              });
+              showNotification("时间段已添加", "success");
+            }
+
+            // 清空输入框
+            startTimeInput.value = "";
+            endTimeInput.value = "";
+            activityInput.value = "";
+
+            // 更新预览和列表
+            updatePreview();
+            updateScheduleList();
+          } else {
+            showNotification("请填写完整的时间段和活动描述", "error");
+          }
+        });
+
+        /**
+         * 更新预览功能
+         * 更新壁纸标题、副标题和预览内容
+         */
+        const updatePreviewBtn = document.getElementById("updatePreviewBtn");
+        updatePreviewBtn.addEventListener("click", function () {
+          // 更新标题
+          const titleInput = document.getElementById("title");
+          userData.title = titleInput.value || "我的作息表";
+
+          // 更新副标题
+          const subtitleInput = document.getElementById("subtitle");
+          userData.subtitle = subtitleInput.value || "保持规律，提升效率";
+
+          // 更新副标题显示状态
+          const hideSubtitleCheckbox = document.getElementById("hideSubtitle");
+          userData.hideSubtitle = hideSubtitleCheckbox.checked;
+
+          // 更新预览
+          updatePreview();
+
+          // 显示成功提示
+          showNotification("预览已更新", "success");
+        });
+
+        /**
+         * 副标题实时更新
+         */
+        const subtitleInput = document.getElementById("subtitle");
+        const hideSubtitleCheckbox = document.getElementById("hideSubtitle");
+
+        subtitleInput.addEventListener("input", function () {
+          userData.subtitle = this.value || "保持规律，提升效率";
+          updatePreview();
+        });
+
+        hideSubtitleCheckbox.addEventListener("change", function () {
+          userData.hideSubtitle = this.checked;
+          updatePreview();
+        });
+
+        /**
+         * 布局选择功能
+         * 根据选择的布局显示相应的配置选项
+         */
+        const layoutRadios = document.querySelectorAll('input[name="layout"]');
+        const tableLayoutConfig = document.getElementById("tableLayoutConfig");
+
+        layoutRadios.forEach((radio) => {
+          radio.addEventListener("change", function () {
+            if (this.checked) {
+              userData.layout = this.value;
+
+              // 显示/隐藏表格配置
+              if (this.value === "table") {
+                tableLayoutConfig.classList.remove("hidden");
+              } else {
+                tableLayoutConfig.classList.add("hidden");
+              }
+
+              updatePreview();
+            }
+          });
+        });
+
+        /**
+         * 表格列数选择
+         */
+        const tableColumnRadios = document.querySelectorAll(
+          'input[name="tableColumns"]'
+        );
+        tableColumnRadios.forEach((radio) => {
+          radio.addEventListener("change", function () {
+            if (this.checked) {
+              userData.tableColumns = parseInt(this.value);
+              if (userData.layout === "table") {
+                updatePreview();
+              }
+            }
+          });
+        });
+
+        // 字体大小调整
+        const fontSizeSlider = document.getElementById("fontSizeSlider");
+        const fontSizeValue = document.getElementById("fontSizeValue");
+
+        fontSizeSlider.addEventListener("input", function () {
+          fontSizeValue.textContent = `${this.value}px`;
+          userData.fontSize = parseInt(this.value);
+          updatePreview();
+        });
+
+        // 字体选择
+        const fontSelect = document.getElementById("fontSelect");
+        fontSelect.addEventListener("change", function () {
+          userData.fontFamily = this.value;
+          updatePreview();
+        });
+
+        // 颜色选择
+        const colorBtns = document.querySelectorAll(".color-btn");
+        colorBtns.forEach((btn) => {
+          btn.addEventListener("click", function () {
+            // 移除所有选中状态
+            colorBtns.forEach((b) => {
+              b.classList.remove("ring-2");
+            });
+
+            // 添加当前选中状态
+            this.classList.add("ring-2");
+
+            // 更新颜色
+            userData.bgColor = this.dataset.color;
+            updatePreview();
+          });
+        });
+
+        // 高级设置面板切换
+        const advancedSettingsBtn = document.getElementById(
+          "advancedSettingsBtn"
+        );
+        const advancedSettingsPanel = document.getElementById(
+          "advancedSettingsPanel"
+        );
+
+        advancedSettingsBtn.addEventListener("click", function () {
+          advancedSettingsPanel.classList.toggle("hidden");
+        });
+
+        // 预设模板
+        const templateBtns = document.querySelectorAll(".template-btn");
+        templateBtns.forEach((btn) => {
+          btn.addEventListener("click", function () {
+            const template = this.dataset.template;
+
+            // 加载预设模板数据
+            loadTemplate(template);
+
+            // 更新预览
+            updatePreview();
+
+            // 显示成功提示
+            showNotification(`已加载${this.textContent}模板`, "success");
+          });
+        });
+
+        /**
+         * 文件上传功能
+         * 支持点击选择和拖拽上传
+         */
+        const fileUpload = document.getElementById("file-upload");
+        const parseFileBtn = document.getElementById("parseFileBtn");
+        const uploadArea = fileUpload.parentElement.parentElement;
+
+        // 文件选择事件
+        fileUpload.addEventListener("change", function (e) {
+          if (e.target.files.length > 0) {
+            const file = e.target.files[0];
+            validateAndShowFile(file);
+          }
+        });
+
+        // 拖拽上传功能
+        uploadArea.addEventListener("dragover", function (e) {
+          e.preventDefault();
+          uploadArea.classList.add("border-primary", "bg-blue-50");
+        });
+
+        uploadArea.addEventListener("dragleave", function (e) {
+          e.preventDefault();
+          uploadArea.classList.remove("border-primary", "bg-blue-50");
+        });
+
+        uploadArea.addEventListener("drop", function (e) {
+          e.preventDefault();
+          uploadArea.classList.remove("border-primary", "bg-blue-50");
+
+          const files = e.dataTransfer.files;
+          if (files.length > 0) {
+            const file = files[0];
+            fileUpload.files = files; // 设置文件到input元素
+            validateAndShowFile(file);
+          }
+        });
+
+        /**
+         * 验证并显示选择的文件
+         * @param {File} file - 选择的文件
+         */
+        function validateAndShowFile(file) {
+          const allowedExtensions = ["csv", "xlsx", "xls"];
+          const fileExtension = file.name.split(".").pop().toLowerCase();
+
+          if (!allowedExtensions.includes(fileExtension)) {
+            showNotification(
+              `不支持的文件格式: ${fileExtension}，请选择CSV或Excel文件`,
+              "error"
+            );
+            return;
+          }
+
+          if (file.size > 5 * 1024 * 1024) {
+            // 5MB限制
+            showNotification("文件大小不能超过5MB", "error");
+            return;
+          }
+
+          showNotification(
+            `已选择文件: ${file.name} (${(file.size / 1024).toFixed(1)}KB)`,
+            "success"
+          );
+        }
+
+        /**
+         * 文件解析功能
+         * 支持CSV格式的时间表导入
+         */
+        parseFileBtn.addEventListener("click", function () {
+          const fileInput = document.getElementById("file-upload");
+          if (fileInput.files.length === 0) {
+            showNotification("请先选择一个文件", "error");
+            return;
+          }
+
+          const file = fileInput.files[0];
+          const fileExtension = file.name.split(".").pop().toLowerCase();
+
+          // 显示加载状态
+          parseFileBtn.innerHTML =
+            '<div class="loading-spinner inline-block mr-2"></div> 解析中...';
+          parseFileBtn.disabled = true;
+
+          if (fileExtension === "csv") {
+            // 检查Papa Parse是否可用
+            if (typeof Papa === "undefined") {
+              showNotification("CSV解析库未加载，请刷新页面重试", "error");
+              resetParseButton();
+              return;
+            }
+
+            // 使用Papa Parse解析CSV文件
+            Papa.parse(file, {
+              header: true,
+              skipEmptyLines: true,
+              encoding: "UTF-8",
+              complete: function (results) {
+                resetParseButton();
+
+                if (results.errors.length > 0) {
+                  console.error("CSV解析错误:", results.errors);
+                  showNotification(
+                    `CSV解析错误: ${results.errors[0].message}`,
+                    "error"
+                  );
+                  return;
+                }
+
+                if (!results.data || results.data.length === 0) {
+                  showNotification("CSV文件为空或格式不正确", "error");
+                  return;
+                }
+
+                // 验证CSV格式是否包含必要的列
+                const requiredColumns = ["startTime", "endTime", "activity"];
+                const firstRow = results.data[0];
+                const hasRequiredColumns = requiredColumns.every(
+                  (col) => firstRow && firstRow.hasOwnProperty(col)
+                );
+
+                if (!hasRequiredColumns) {
+                  showNotification(
+                    "CSV文件格式不正确，需要包含startTime, endTime和activity列。请下载模板文件参考正确格式。",
+                    "error"
+                  );
+                  return;
+                }
+
+                // 清空现有数据并添加解析后的数据
+                userData.schedule = [];
+                let validCount = 0;
+                const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+
+                results.data.forEach((row, index) => {
+                  // 验证时间格式
+                  if (
+                    !timeRegex.test(row.startTime) ||
+                    !timeRegex.test(row.endTime)
+                  ) {
+                    showNotification(
+                      `第${index + 1}行时间格式不正确，跳过该行`,
+                      "warning"
+                    );
+                    return;
+                  }
+
+                  // 验证时间逻辑
+                  const startMinutes =
+                    parseInt(row.startTime.split(":")[0]) * 60 +
+                    parseInt(row.startTime.split(":")[1]);
+                  const endMinutes =
+                    parseInt(row.endTime.split(":")[0]) * 60 +
+                    parseInt(row.endTime.split(":")[1]);
+
+                  if (
+                    endMinutes <= startMinutes &&
+                    !(startMinutes >= 22 * 60 && endMinutes <= 6 * 60)
+                  ) {
+                    showNotification(
+                      `第${index + 1}行结束时间必须晚于开始时间，跳过该行`,
+                      "warning"
+                    );
+                    return;
+                  }
+
+                  // 验证活动描述
+                  if (!row.activity || row.activity.trim() === "") {
+                    showNotification(
+                      `第${index + 1}行活动描述不能为空，跳过该行`,
+                      "warning"
+                    );
+                    return;
+                  }
+
+                  userData.schedule.push({
+                    id: nextScheduleId++,
+                    startTime: normalizeTime(row.startTime),
+                    endTime: normalizeTime(row.endTime),
+                    activity: row.activity,
+                  });
+                  validCount++;
+                });
+
+                updatePreview();
+                updateScheduleList();
+                showNotification(
+                  `CSV文件解析成功，共导入${validCount}个有效时间段`,
+                  "success"
+                );
+              },
+            });
+          } else if (fileExtension === "xlsx" || fileExtension === "xls") {
+            // 检查SheetJS是否可用
+            if (typeof XLSX === "undefined") {
+              showNotification("Excel解析库未加载，请刷新页面重试", "error");
+              resetParseButton();
+              return;
+            }
+
+            // 使用FileReader读取Excel文件
+            const reader = new FileReader();
+            reader.onload = function (e) {
+              try {
+                // 解析Excel文件
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: "array" });
+
+                // 获取第一个工作表
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+
+                // 将工作表转换为JSON格式
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, {
+                  header: 1,
+                  defval: "",
+                });
+
+                resetParseButton();
+
+                if (!jsonData || jsonData.length === 0) {
+                  showNotification("Excel文件为空或格式不正确", "error");
+                  return;
+                }
+
+                // 检查是否有标题行
+                if (jsonData.length < 2) {
+                  showNotification(
+                    "Excel文件至少需要包含标题行和一行数据",
+                    "error"
+                  );
+                  return;
+                }
+
+                // 获取标题行
+                const headers = jsonData[0];
+                const dataRows = jsonData.slice(1);
+
+                // 查找必要的列索引
+                const startTimeIndex = headers.findIndex(
+                  (h) =>
+                    h &&
+                    (h.toString().toLowerCase().includes("start") ||
+                      h.toString().includes("开始") ||
+                      h.toString().includes("startTime"))
+                );
+                const endTimeIndex = headers.findIndex(
+                  (h) =>
+                    h &&
+                    (h.toString().toLowerCase().includes("end") ||
+                      h.toString().includes("结束") ||
+                      h.toString().includes("endTime"))
+                );
+                const activityIndex = headers.findIndex(
+                  (h) =>
+                    h &&
+                    (h.toString().toLowerCase().includes("activity") ||
+                      h.toString().includes("活动") ||
+                      h.toString().includes("事项") ||
+                      h.toString().includes("内容"))
+                );
+
+                if (
+                  startTimeIndex === -1 ||
+                  endTimeIndex === -1 ||
+                  activityIndex === -1
+                ) {
+                  showNotification(
+                    "Excel文件格式不正确，需要包含开始时间、结束时间和活动内容列。请确保列标题包含相关关键词。",
+                    "error"
+                  );
+                  return;
+                }
+
+                // 清空现有数据并添加解析后的数据
+                userData.schedule = [];
+                let validCount = 0;
+                const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
+
+                dataRows.forEach((row, index) => {
+                  const startTime = row[startTimeIndex]?.toString().trim();
+                  const endTime = row[endTimeIndex]?.toString().trim();
+                  const activity = row[activityIndex]?.toString().trim();
+
+                  // 跳过空行
+                  if (!startTime && !endTime && !activity) {
+                    return;
+                  }
+
+                  // 标准化时间格式（处理Excel可能的时间格式）
+                  let normalizedStartTime = normalizeExcelTime(startTime);
+                  let normalizedEndTime = normalizeExcelTime(endTime);
+
+                  // 验证时间格式
+                  if (
+                    !timeRegex.test(normalizedStartTime) ||
+                    !timeRegex.test(normalizedEndTime)
+                  ) {
+                    showNotification(
+                      `第${
+                        index + 2
+                      }行时间格式不正确，跳过该行。时间格式应为 HH:MM`,
+                      "warning"
+                    );
+                    return;
+                  }
+
+                  // 验证时间逻辑
+                  const startMinutes =
+                    parseInt(normalizedStartTime.split(":")[0]) * 60 +
+                    parseInt(normalizedStartTime.split(":")[1]);
+                  const endMinutes =
+                    parseInt(normalizedEndTime.split(":")[0]) * 60 +
+                    parseInt(normalizedEndTime.split(":")[1]);
+
+                  if (
+                    endMinutes <= startMinutes &&
+                    !(startMinutes >= 22 * 60 && endMinutes <= 6 * 60)
+                  ) {
+                    showNotification(
+                      `第${index + 2}行结束时间必须晚于开始时间，跳过该行`,
+                      "warning"
+                    );
+                    return;
+                  }
+
+                  // 验证活动描述
+                  if (!activity) {
+                    showNotification(
+                      `第${index + 2}行活动描述不能为空，跳过该行`,
+                      "warning"
+                    );
+                    return;
+                  }
+
+                  userData.schedule.push({
+                    id: nextScheduleId++,
+                    startTime: normalizedStartTime,
+                    endTime: normalizedEndTime,
+                    activity: activity,
+                  });
+                  validCount++;
+                });
+
+                updatePreview();
+                updateScheduleList();
+                showNotification(
+                  `Excel文件解析成功，共导入${validCount}个有效时间段`,
+                  "success"
+                );
+              } catch (error) {
+                console.error("Excel解析错误:", error);
+                showNotification(
+                  `Excel文件解析失败: ${error.message}`,
+                  "error"
+                );
+                resetParseButton();
+              }
+            };
+
+            reader.onerror = function () {
+              showNotification("文件读取失败，请重试", "error");
+              resetParseButton();
+            };
+
+            reader.readAsArrayBuffer(file);
+          } else {
+            resetParseButton();
+            showNotification("不支持的文件格式，请上传CSV或Excel文件", "error");
+          }
+        });
+
+        /**
+         * 重置解析按钮状态
+         */
+        function resetParseButton() {
+          parseFileBtn.innerHTML =
+            '<i class="fa fa-refresh mr-1"></i> 解析文件';
+          parseFileBtn.disabled = false;
+        }
+
+        // 分辨率选择
+        const resolutionSelect = document.getElementById("resolutionSelect");
+        const customResolutionInputs = document.getElementById(
+          "customResolutionInputs"
+        );
+
+        resolutionSelect.addEventListener("change", function () {
+          userData.resolution = this.value;
+
+          if (this.value === "custom") {
+            customResolutionInputs.classList.remove("hidden");
+          } else {
+            customResolutionInputs.classList.add("hidden");
+
+            // 从分辨率字符串中提取宽度和高度
+            const [width, height] = this.value.split("x");
+            userData.customWidth = parseInt(width);
+            userData.customHeight = parseInt(height);
+          }
+        });
+
+        // 自定义分辨率输入
+        const customWidthInput = document.getElementById("customWidth");
+        const customHeightInput = document.getElementById("customHeight");
+
+        customWidthInput.addEventListener("change", function () {
+          const width = parseInt(this.value);
+          if (isNaN(width) || width <= 0) {
+            showNotification("宽度必须是有效的正数", "error");
+            this.value = userData.customWidth || 1920;
+            return;
+          }
+          userData.customWidth = width;
+        });
+
+        customHeightInput.addEventListener("change", function () {
+          const height = parseInt(this.value);
+          if (isNaN(height) || height <= 0) {
+            showNotification("高度必须是有效的正数", "error");
+            this.value = userData.customHeight || 1080;
+            return;
+          }
+          userData.customHeight = height;
+        });
+
+        // 下载壁纸功能
+        const downloadBtn = document.getElementById("downloadBtn");
+        downloadBtn.addEventListener("click", function () {
+          const previewContainer = document.getElementById("wallpaperPreview");
+
+          // 获取选择的分辨率
+          let width, height;
+          if (userData.resolution === "custom") {
+            width = userData.customWidth;
+            height = userData.customHeight;
+          } else {
+            [width, height] = userData.resolution.split("x").map(Number);
+          }
+
+          // 创建一个临时容器用于生成高分辨率图像
+          const tempContainer = document.createElement("div");
+          tempContainer.style.width = `${width}px`;
+          tempContainer.style.height = `${height}px`;
+          tempContainer.style.overflow = "hidden";
+          tempContainer.style.position = "fixed";
+          tempContainer.style.top = "-9999px";
+          tempContainer.style.left = "-9999px";
+
+          // 复制预览内容到临时容器
+          const tempPreview = previewContainer.cloneNode(true);
+          tempPreview.style.width = "100%";
+          tempPreview.style.height = "100%";
+          tempPreview.style.position = "relative";
+          tempContainer.appendChild(tempPreview);
+
+          // 添加到页面
+          document.body.appendChild(tempContainer);
+
+          // 使用html2canvas捕获临时容器并创建图像
+          html2canvas(tempPreview, {
+            scale: 2, // 提高缩放比例以获得更高质量
+            useCORS: true,
+            logging: false,
+            allowTaint: true,
+            backgroundColor: null, // 保留透明背景
+          })
+            .then((canvas) => {
+              // 将canvas转换为Blob
+              canvas.toBlob((blob) => {
+                // 保存为PNG文件
+                saveAs(blob, `${userData.title}.png`);
+
+                // 移除临时容器
+                document.body.removeChild(tempContainer);
+              });
+            })
+            .catch((error) => {
+              console.error("下载壁纸失败:", error);
+              showNotification("下载壁纸失败，请重试", "error");
+
+              // 确保移除临时容器
+              document.body.removeChild(tempContainer);
+            });
+        });
+
+        // 初始化表单值
+        document.getElementById("title").value = userData.title;
+        document.getElementById("subtitle").value = userData.subtitle;
+        document.getElementById("hideSubtitle").checked = userData.hideSubtitle;
+
+        /**
+         * 时间输入框格式标准化
+         * 当用户输入时间后，自动标准化格式
+         */
+        const timeInputs = document.querySelectorAll(".start-time, .end-time");
+        timeInputs.forEach((input) => {
+          input.addEventListener("blur", function () {
+            if (this.value) {
+              this.value = normalizeTime(this.value);
+            }
+          });
+        });
+
+        // 初始化预览和列表
+        updatePreview();
+        updateScheduleList();
+      });
+
+      /**
+       * 更新时间段列表显示
+       * 显示所有已添加的时间段，包含编辑和删除按钮
+       */
+      function updateScheduleList() {
+        const scheduleList = document.getElementById("scheduleList");
+        const scheduleCount = document.getElementById("scheduleCount");
+
+        // 更新计数
+        scheduleCount.textContent = `(${userData.schedule.length})`;
+
+        // 清空现有列表
+        scheduleList.innerHTML = "";
+
+        if (userData.schedule.length === 0) {
+          scheduleList.innerHTML =
+            '<p class="text-gray-500 text-sm text-center py-4">暂无时间段</p>';
+          return;
+        }
+
+        // 按开始时间排序
+        const sortedSchedule = sortScheduleByTime(userData.schedule);
+
+        sortedSchedule.forEach((item) => {
+          const scheduleItem = document.createElement("div");
+          scheduleItem.className =
+            "flex items-center justify-between p-3 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors";
+
+          scheduleItem.innerHTML = `
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-900 truncate">
+                ${item.startTime} - ${item.endTime}
+              </div>
+              <div class="text-sm text-gray-600 truncate">
+                ${item.activity}
+              </div>
+            </div>
+            <div class="flex space-x-1 ml-2">
+              <button
+                class="edit-schedule-btn p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-100 rounded transition-colors"
+                data-id="${item.id}"
+                title="编辑"
+              >
+                <i class="fa fa-edit text-xs"></i>
+              </button>
+              <button
+                class="delete-schedule-btn p-1 text-red-600 hover:text-red-800 hover:bg-red-100 rounded transition-colors"
+                data-id="${item.id}"
+                title="删除"
+              >
+                <i class="fa fa-trash text-xs"></i>
+              </button>
+            </div>
+          `;
+
+          scheduleList.appendChild(scheduleItem);
+        });
+
+        // 绑定编辑和删除事件
+        bindScheduleListEvents();
+      }
+
+      /**
+       * 绑定时间段列表的编辑和删除事件
+       */
+      function bindScheduleListEvents() {
+        // 编辑按钮事件
+        document.querySelectorAll(".edit-schedule-btn").forEach((btn) => {
+          btn.addEventListener("click", function () {
+            const scheduleId = parseInt(this.dataset.id);
+            editSchedule(scheduleId);
+          });
+        });
+
+        // 删除按钮事件
+        document.querySelectorAll(".delete-schedule-btn").forEach((btn) => {
+          btn.addEventListener("click", function () {
+            const scheduleId = parseInt(this.dataset.id);
+            deleteSchedule(scheduleId);
+          });
+        });
+      }
+
+      /**
+       * 编辑时间段
+       * @param {number} scheduleId - 时间段ID
+       */
+      function editSchedule(scheduleId) {
+        const schedule = userData.schedule.find(
+          (item) => item.id === scheduleId
+        );
+        if (!schedule) return;
+
+        // 进入编辑模式
+        editingScheduleId = scheduleId;
+
+        // 填充表单
+        document.querySelector(".start-time").value = schedule.startTime;
+        document.querySelector(".end-time").value = schedule.endTime;
+        document.querySelector(".activity").value = schedule.activity;
+
+        // 更新按钮文本
+        const addTimeBtn = document.getElementById("addTimeBtn");
+        addTimeBtn.innerHTML = '<i class="fa fa-save mr-1"></i> 保存修改';
+        addTimeBtn.classList.remove("bg-secondary");
+        addTimeBtn.classList.add("bg-orange-500", "hover:bg-orange-600");
+
+        // 添加取消按钮
+        if (!document.getElementById("cancelEditBtn")) {
+          const cancelBtn = document.createElement("button");
+          cancelBtn.id = "cancelEditBtn";
+          cancelBtn.className =
+            "mt-2 w-full py-2 px-4 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors flex justify-center items-center";
+          cancelBtn.innerHTML = '<i class="fa fa-times mr-1"></i> 取消编辑';
+          cancelBtn.addEventListener("click", exitEditMode);
+          addTimeBtn.parentNode.appendChild(cancelBtn);
+        }
+
+        showNotification("进入编辑模式", "info");
+      }
+
+      /**
+       * 退出编辑模式
+       */
+      function exitEditMode() {
+        editingScheduleId = null;
+
+        // 清空表单
+        document.querySelector(".start-time").value = "";
+        document.querySelector(".end-time").value = "";
+        document.querySelector(".activity").value = "";
+
+        // 恢复按钮
+        const addTimeBtn = document.getElementById("addTimeBtn");
+        addTimeBtn.innerHTML = '<i class="fa fa-plus mr-1"></i> 添加时间段';
+        addTimeBtn.classList.remove("bg-orange-500", "hover:bg-orange-600");
+        addTimeBtn.classList.add("bg-secondary");
+
+        // 移除取消按钮
+        const cancelBtn = document.getElementById("cancelEditBtn");
+        if (cancelBtn) {
+          cancelBtn.remove();
+        }
+      }
+
+      /**
+       * 删除时间段
+       * @param {number} scheduleId - 时间段ID
+       */
+      function deleteSchedule(scheduleId) {
+        if (confirm("确定要删除这个时间段吗？")) {
+          userData.schedule = userData.schedule.filter(
+            (item) => item.id !== scheduleId
+          );
+          updateScheduleList();
+          updatePreview();
+          showNotification("时间段已删除", "success");
+
+          // 如果正在编辑被删除的时间段，退出编辑模式
+          if (editingScheduleId === scheduleId) {
+            exitEditMode();
+          }
+        }
+      }
+
+      /**
+       * 更新预览区域
+       * 更新标题、副标题和布局内容
+       */
+      function updatePreview() {
+        const previewElement = document.getElementById("wallpaperPreview");
+        const titleElement = document.getElementById("previewTitle");
+        const subtitleElement = document.getElementById("previewSubtitle");
+        const scheduleContainer = document.getElementById("scheduleContainer");
+
+        // 更新标题，如果为空则使用默认标题
+        titleElement.textContent = userData.title || "我的作息表";
+
+        // 更新副标题
+        if (userData.hideSubtitle) {
+          subtitleElement.style.display = "none";
+        } else {
+          subtitleElement.style.display = "block";
+          subtitleElement.textContent =
+            userData.subtitle || "保持规律，提升效率";
+        }
+
+        // 更新主题
+        updateTheme();
+
+        // 清空现有时间段
+        scheduleContainer.innerHTML = "";
+
+        // 根据布局类型生成内容
+        if (userData.layout === "time-block") {
+          generateTimeBlockLayout(scheduleContainer);
+        } else if (userData.layout === "timeline") {
+          generateTimelineLayout(scheduleContainer);
+        } else if (userData.layout === "grid") {
+          generateGridLayout(scheduleContainer);
+        } else if (userData.layout === "table") {
+          generateTableLayout(scheduleContainer);
+        }
+
+        // 更新字体
+        previewElement.style.fontFamily = userData.fontFamily;
+        previewElement.style.fontSize = `${userData.fontSize}px`;
+      }
+
+      /**
+       * 更新背景颜色
+       * 根据用户选择应用背景颜色或默认渐变
+       */
+      function updateTheme() {
+        const previewElement = document.getElementById("wallpaperPreview");
+
+        // 移除所有可能的背景类
+        const backgroundClasses = [
+          "wallpaper-preview",
+          "bg-gradient-to-br",
+          "from-blue-400",
+          "to-indigo-500",
+          "bg-blue-500",
+          "bg-green-500",
+          "bg-purple-500",
+          "bg-yellow-500",
+          "bg-red-500",
+          "bg-indigo-500",
+          "bg-teal-500",
+          "bg-pink-500",
+          "bg-orange-500",
+          "bg-gray-800",
+          "bg-white",
+        ];
+
+        previewElement.classList.remove(...backgroundClasses);
+
+        // 如果背景颜色不是透明，使用选择的背景颜色
+        if (userData.bgColor !== "transparent") {
+          previewElement.classList.add(`bg-${userData.bgColor}`);
+        } else {
+          // 使用默认渐变背景
+          previewElement.classList.add(
+            "wallpaper-preview",
+            "bg-gradient-to-br",
+            "from-blue-400",
+            "to-indigo-500"
+          );
+        }
+      }
+
+      /**
+       * 生成时间块布局
+       * 恢复原始的简洁卡片风格
+       */
+      function generateTimeBlockLayout(container) {
+        // 设置容器为网格布局
+        container.className = "grid grid-cols-2 gap-4 h-full";
+
+        // 按开始时间排序
+        const sortedSchedule = sortScheduleByTime(userData.schedule);
+
+        if (sortedSchedule.length === 0) {
+          container.innerHTML = `
+            <div class="col-span-2 flex items-center justify-center h-full">
+              <div class="text-center text-gray-500">
+                <i class="fa fa-calendar-o text-4xl mb-4"></i>
+                <p>暂无时间安排</p>
+                <p class="text-sm">请添加时间段来生成时间块</p>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        sortedSchedule.forEach((item, index) => {
+          // 创建时间段元素
+          const timeBlock = document.createElement("div");
+          timeBlock.className =
+            "time-block-card rounded-lg p-4 shadow-md border border-white/50 transition-transform hover:scale-[1.02]";
+
+          // 根据时间段在一天中的位置设置不同的颜色
+          const startTimeHours = parseInt(item.startTime.split(":")[0]);
+          let bgColorClass = "bg-white/80";
+          let borderColorClass = "border-blue-200";
+          let textColorClass = "text-gray-800";
+
+          if (startTimeHours >= 5 && startTimeHours < 12) {
+            bgColorClass = "bg-yellow-50/90"; // 早晨
+            borderColorClass = "border-yellow-200";
+          } else if (startTimeHours >= 12 && startTimeHours < 18) {
+            bgColorClass = "bg-blue-50/90"; // 下午
+            borderColorClass = "border-blue-200";
+          } else if (startTimeHours >= 18 && startTimeHours < 22) {
+            bgColorClass = "bg-purple-50/90"; // 晚上
+            borderColorClass = "border-purple-200";
+          } else {
+            bgColorClass = "bg-gray-50/90"; // 深夜
+            borderColorClass = "border-gray-200";
+            textColorClass = "text-gray-700";
+          }
+
+          timeBlock.classList.add(bgColorClass, borderColorClass);
+
+          // 设置内容
+          timeBlock.innerHTML = `
+            <div class="font-medium ${textColorClass} text-sm mb-1">${item.startTime} - ${item.endTime}</div>
+            <div class="font-bold text-base ${textColorClass}">${item.activity}</div>
+          `;
+
+          container.appendChild(timeBlock);
+        });
+      }
+
+      /**
+       * 生成时间轴布局
+       * 以时间线形式展示时间安排，支持滚动查看所有内容
+       */
+      function generateTimelineLayout(container) {
+        // 设置容器样式，确保可以显示所有内容
+        container.className = "w-full h-full overflow-y-auto px-4";
+
+        // 创建时间轴容器
+        const timelineContainer = document.createElement("div");
+        timelineContainer.className =
+          "timeline-container space-y-4 text-gray-800 py-4";
+
+        // 按开始时间排序
+        const sortedSchedule = sortScheduleByTime(userData.schedule);
+
+        if (sortedSchedule.length === 0) {
+          container.innerHTML = `
+            <div class="flex items-center justify-center h-full">
+              <div class="text-center text-gray-500">
+                <i class="fa fa-clock-o text-4xl mb-4"></i>
+                <p>暂无时间安排</p>
+                <p class="text-sm">请添加时间段来生成时间轴</p>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        sortedSchedule.forEach((item, index) => {
+          // 创建时间轴项目
+          const timelineItem = document.createElement("div");
+          timelineItem.className = "timeline-item relative";
+
+          // 设置时间轴项目颜色
+          const colorClass = getTimelineColor(index);
+          timelineItem.classList.add(colorClass);
+
+          // 计算持续时间
+          const startParts = item.startTime.split(":");
+          const endParts = item.endTime.split(":");
+          const startMinutes =
+            parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+          let endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+
+          if (endMinutes < startMinutes) {
+            endMinutes += 24 * 60;
+          }
+
+          const durationMinutes = endMinutes - startMinutes;
+          const hours = Math.floor(durationMinutes / 60);
+          const minutes = durationMinutes % 60;
+          const durationText =
+            hours > 0
+              ? `${hours}小时${minutes > 0 ? minutes + "分钟" : ""}`
+              : `${minutes}分钟`;
+
+          // 设置内容
+          timelineItem.innerHTML = `
+            <div class="timeline-dot"></div>
+            <div class="ml-6 bg-white/80 backdrop-blur-sm rounded-lg p-4 shadow-sm border border-gray-200">
+              <div class="flex justify-between items-start mb-2">
+                <div class="font-bold text-lg text-gray-900">${item.activity}</div>
+                <div class="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">${durationText}</div>
+              </div>
+              <div class="font-medium text-gray-700">${item.startTime} - ${item.endTime}</div>
+            </div>
+          `;
+
+          timelineContainer.appendChild(timelineItem);
+        });
+
+        container.appendChild(timelineContainer);
+      }
+
+      // 为时间轴项目获取颜色
+      function getTimelineColor(index) {
+        const colors = [
+          "text-blue-500",
+          "text-green-500",
+          "text-purple-500",
+          "text-yellow-500",
+          "text-red-500",
+        ];
+        return colors[index % colors.length];
+      }
+
+      // 生成网格布局
+      function generateGridLayout(container) {
+        // 设置网格列数
+        const cols = 4;
+        container.className = "grid grid-cols-4 gap-2 h-full";
+
+        // 按开始时间排序
+        const sortedSchedule = sortScheduleByTime(userData.schedule);
+
+        sortedSchedule.forEach((item, index) => {
+          // 创建网格项目
+          const gridItem = document.createElement("div");
+
+          // 设置背景颜色
+          const colorClass = getGridColor(index);
+          gridItem.className = `rounded-lg p-3 shadow-md ${colorClass} text-white transition-transform hover:scale-[1.03]`;
+
+          // 设置内容
+          gridItem.innerHTML = `
+                    <div class="font-medium text-sm">${item.startTime} - ${item.endTime}</div>
+                    <div class="font-bold text-lg mt-1">${item.activity}</div>
+                `;
+
+          container.appendChild(gridItem);
+        });
+      }
+
+      // 为网格项目获取颜色
+      function getGridColor(index) {
+        const colors = [
+          "bg-blue-500",
+          "bg-green-500",
+          "bg-purple-500",
+          "bg-yellow-500",
+          "bg-red-500",
+          "bg-indigo-500",
+          "bg-teal-500",
+          "bg-amber-500",
+        ];
+        return colors[index % colors.length];
+      }
+
+      /**
+       * 生成表格布局
+       * 支持单列和双列表格展示
+       */
+      function generateTableLayout(container) {
+        // 设置容器为表格布局
+        container.className = "w-full h-full overflow-auto";
+
+        // 按开始时间排序
+        const sortedSchedule = sortScheduleByTime(userData.schedule);
+
+        if (sortedSchedule.length === 0) {
+          container.innerHTML = `
+            <div class="flex items-center justify-center h-full">
+              <div class="text-center text-gray-500">
+                <i class="fa fa-table text-4xl mb-4"></i>
+                <p>暂无时间安排</p>
+                <p class="text-sm">请添加时间段来生成表格</p>
+              </div>
+            </div>
+          `;
+          return;
+        }
+
+        // 创建表格
+        const table = document.createElement("table");
+        table.className =
+          "w-full border-collapse bg-white/90 backdrop-blur-sm rounded-lg overflow-hidden shadow-lg";
+
+        // 根据列数配置创建表头
+        const thead = document.createElement("thead");
+        if (userData.tableColumns === 1) {
+          // 单列表格
+          thead.innerHTML = `
+            <tr class="bg-gray-800 text-white">
+              <th class="px-4 py-3 text-left font-semibold">时间安排</th>
+            </tr>
+          `;
+        } else {
+          // 双列表格
+          thead.innerHTML = `
+            <tr class="bg-gray-800 text-white">
+              <th class="px-4 py-3 text-left font-semibold border-r border-gray-600">时间</th>
+              <th class="px-4 py-3 text-left font-semibold">活动安排</th>
+            </tr>
+          `;
+        }
+        table.appendChild(thead);
+
+        // 创建表体
+        const tbody = document.createElement("tbody");
+
+        sortedSchedule.forEach((item, index) => {
+          const row = document.createElement("tr");
+          row.className = `border-b border-gray-200 hover:bg-gray-50 transition-colors ${
+            index % 2 === 0 ? "bg-white" : "bg-gray-50"
+          }`;
+
+          // 计算时间段持续时间
+          const startParts = item.startTime.split(":");
+          const endParts = item.endTime.split(":");
+          const startMinutes =
+            parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+          let endMinutes = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+
+          // 处理跨天情况
+          if (endMinutes < startMinutes) {
+            endMinutes += 24 * 60;
+          }
+
+          const durationMinutes = endMinutes - startMinutes;
+          const hours = Math.floor(durationMinutes / 60);
+          const minutes = durationMinutes % 60;
+          const durationText =
+            hours > 0
+              ? `${hours}小时${minutes > 0 ? minutes + "分钟" : ""}`
+              : `${minutes}分钟`;
+
+          // 根据列数配置生成不同的行内容
+          if (userData.tableColumns === 1) {
+            // 单列表格：时间和活动在同一列
+            row.innerHTML = `
+              <td class="px-4 py-3">
+                <div class="flex flex-col space-y-1">
+                  <div class="font-bold text-lg text-gray-900">${item.activity}</div>
+                  <div class="font-medium text-gray-700">${item.startTime} - ${item.endTime}</div>
+                  <div class="text-sm text-gray-500">${durationText}</div>
+                </div>
+              </td>
+            `;
+          } else {
+            // 双列表格：时间和活动分开
+            row.innerHTML = `
+              <td class="px-4 py-3 border-r border-gray-200">
+                <div class="font-medium text-gray-900">${item.startTime} - ${item.endTime}</div>
+                <div class="text-sm text-gray-500">${durationText}</div>
+              </td>
+              <td class="px-4 py-3">
+                <div class="font-medium text-gray-900">${item.activity}</div>
+              </td>
+            `;
+          }
+
+          tbody.appendChild(row);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+
+        // 如果没有数据，显示提示
+        if (sortedSchedule.length === 0) {
+          container.innerHTML = `
+            <div class="flex items-center justify-center h-full">
+              <div class="text-center text-gray-500">
+                <i class="fa fa-calendar-o text-4xl mb-4"></i>
+                <p>暂无时间安排</p>
+                <p class="text-sm">请添加时间段来生成表格</p>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      /**
+       * 加载预设模板
+       * @param {string} template - 模板类型
+       */
+      function loadTemplate(template) {
+        // 清空现有数据
+        userData.schedule = [];
+        nextScheduleId = 1;
+
+        if (template === "student") {
+          userData.title = "学生日常作息";
+          userData.schedule = [
+            {
+              id: nextScheduleId++,
+              startTime: "06:30",
+              endTime: "07:30",
+              activity: "起床 & 早餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "07:30",
+              endTime: "08:00",
+              activity: "前往学校",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "08:00",
+              endTime: "12:00",
+              activity: "上午课程",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "12:00",
+              endTime: "13:00",
+              activity: "午餐 & 休息",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "13:00",
+              endTime: "17:00",
+              activity: "下午课程",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "17:00",
+              endTime: "18:00",
+              activity: "课外活动",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "18:00",
+              endTime: "19:00",
+              activity: "晚餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "19:00",
+              endTime: "21:00",
+              activity: "家庭作业",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "21:00",
+              endTime: "22:00",
+              activity: "自由时间",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "22:00",
+              endTime: "23:00",
+              activity: "洗漱 & 准备睡觉",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "23:00",
+              endTime: "06:30",
+              activity: "睡眠",
+            },
+          ];
+        } else if (template === "office") {
+          userData.title = "职场白领作息";
+          userData.schedule = [
+            {
+              id: nextScheduleId++,
+              startTime: "07:00",
+              endTime: "08:00",
+              activity: "起床 & 早餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "08:00",
+              endTime: "09:00",
+              activity: "通勤",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "09:00",
+              endTime: "12:00",
+              activity: "上午工作",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "12:00",
+              endTime: "13:00",
+              activity: "午餐 & 休息",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "13:00",
+              endTime: "18:00",
+              activity: "下午工作",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "18:00",
+              endTime: "19:00",
+              activity: "通勤",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "19:00",
+              endTime: "20:00",
+              activity: "晚餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "20:00",
+              endTime: "21:30",
+              activity: "休闲/运动",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "21:30",
+              endTime: "23:00",
+              activity: "自由时间",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "23:00",
+              endTime: "07:00",
+              activity: "睡眠",
+            },
+          ];
+        } else if (template === "freelancer") {
+          userData.title = "自由职业者作息";
+          userData.schedule = [
+            {
+              id: nextScheduleId++,
+              startTime: "08:00",
+              endTime: "09:00",
+              activity: "起床 & 早餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "09:00",
+              endTime: "11:00",
+              activity: "工作",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "11:00",
+              endTime: "11:15",
+              activity: "休息",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "11:15",
+              endTime: "13:00",
+              activity: "工作",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "13:00",
+              endTime: "14:00",
+              activity: "午餐 & 休息",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "14:00",
+              endTime: "17:00",
+              activity: "工作",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "17:00",
+              endTime: "18:00",
+              activity: "运动",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "18:00",
+              endTime: "19:00",
+              activity: "晚餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "19:00",
+              endTime: "21:00",
+              activity: "自由时间",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "21:00",
+              endTime: "23:00",
+              activity: "工作/学习",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "23:00",
+              endTime: "08:00",
+              activity: "睡眠",
+            },
+          ];
+        } else if (template === "fitness") {
+          userData.title = "健身计划作息";
+          userData.schedule = [
+            {
+              id: nextScheduleId++,
+              startTime: "06:00",
+              endTime: "07:00",
+              activity: "起床 & 晨练",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "07:00",
+              endTime: "08:00",
+              activity: "早餐 & 准备",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "08:00",
+              endTime: "12:00",
+              activity: "工作/学习",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "12:00",
+              endTime: "13:30",
+              activity: "午餐 & 休息",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "13:30",
+              endTime: "17:30",
+              activity: "工作/学习",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "17:30",
+              endTime: "19:00",
+              activity: "健身训练",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "19:00",
+              endTime: "20:00",
+              activity: "晚餐",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "20:00",
+              endTime: "21:00",
+              activity: "拉伸/放松",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "21:00",
+              endTime: "22:30",
+              activity: "自由时间",
+            },
+            {
+              id: nextScheduleId++,
+              startTime: "22:30",
+              endTime: "06:00",
+              activity: "睡眠",
+            },
+          ];
+        }
+
+        // 更新列表显示
+        updateScheduleList();
+      }
+
+      // 显示通知
+      function showNotification(message, type = "info") {
+        // 创建通知元素
+        const notification = document.createElement("div");
+
+        // 设置样式
+        let bgColor, textColor, icon;
+        if (type === "success") {
+          bgColor = "bg-green-500";
+          textColor = "text-white";
+          icon = "fa-check-circle";
+        } else if (type === "error") {
+          bgColor = "bg-red-500";
+          textColor = "text-white";
+          icon = "fa-exclamation-circle";
+        } else if (type === "warning") {
+          bgColor = "bg-yellow-500";
+          textColor = "text-white";
+          icon = "fa-exclamation-triangle";
+        } else {
+          bgColor = "bg-blue-500";
+          textColor = "text-white";
+          icon = "fa-info-circle";
+        }
+
+        notification.className = `${bgColor} ${textColor} py-3 px-4 rounded-lg shadow-lg fixed bottom-4 right-4 z-50 transform transition-all duration-300 translate-y-20 opacity-0 flex items-center`;
+
+        // 设置内容
+        notification.innerHTML = `
+                <i class="fa ${icon} mr-2"></i>
+                <span>${message}</span>
+            `;
+
+        // 添加到页面
+        document.body.appendChild(notification);
+
+        // 显示通知
+        setTimeout(() => {
+          notification.classList.remove("translate-y-20", "opacity-0");
+        }, 100);
+
+        // 3秒后隐藏通知
+        setTimeout(() => {
+          notification.classList.add("translate-y-20", "opacity-0");
+
+          // 完全隐藏后移除元素
+          setTimeout(() => {
+            document.body.removeChild(notification);
+          }, 300);
+        }, 3000);
+      }
+
+      // 背景图片上传功能，允许用户自定义壁纸背景
+      const bgImageUpload = document.getElementById("bgImageUpload");
+      bgImageUpload.addEventListener("change", function (e) {
+        if (e.target.files.length > 0) {
+          const file = e.target.files[0];
+          const reader = new FileReader();
+
+          reader.onload = function (event) {
+            const wallpaperPreview =
+              document.getElementById("wallpaperPreview");
+            wallpaperPreview.style.backgroundImage = `url(${event.target.result})`;
+            wallpaperPreview.style.backgroundSize = "cover";
+            wallpaperPreview.style.backgroundPosition = "center";
+            showNotification("背景图片已添加", "success");
+          };
+
+          reader.readAsDataURL(file);
+        }
+      });
+
+      // 颜色选择功能
+      const colorButtons = document.querySelectorAll(".color-btn");
+      colorButtons.forEach((button) => {
+        button.addEventListener("click", function () {
+          // 移除所有颜色按钮的选中状态
+          colorButtons.forEach((btn) =>
+            btn.classList.remove("ring-2", "ring-offset-2")
+          );
+          // 添加当前选中按钮的状态
+          this.classList.add("ring-2", "ring-offset-2");
+          // 更新用户数据
+          userData.bgColor = this.dataset.color;
+          // 更新预览
+          updatePreview();
+          showNotification("背景颜色已更新", "success");
+        });
+      });
+
+      // 全屏预览功能
+      const fullscreenBtn = document.getElementById("fullscreenBtn");
+      const wallpaperPreview = document.getElementById("wallpaperPreview");
+
+      fullscreenBtn.addEventListener("click", function () {
+        if (!document.fullscreenElement) {
+          wallpaperPreview.requestFullscreen().catch((err) => {
+            showNotification(`全屏请求失败: ${err.message}`, "error");
+          });
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        }
+      });
+
+      // 监听全屏状态变化，更新按钮图标
+      document.addEventListener("fullscreenchange", function () {
+        if (document.fullscreenElement) {
+          fullscreenBtn.innerHTML =
+            '<i class="fa fa-compress mr-2"></i> 退出全屏';
+        } else {
+          fullscreenBtn.innerHTML =
+            '<i class="fa fa-expand mr-2"></i> 全屏预览';
+        }
+      });
+
+      // 下载模板功能（支持CSV和Excel格式）
+      document
+        .getElementById("downloadTemplateBtn")
+        .addEventListener("click", function () {
+          // 显示格式选择对话框
+          const format = confirm(
+            "选择下载格式：\n确定 = Excel格式 (.xlsx)\n取消 = CSV格式 (.csv)"
+          );
+
+          if (format) {
+            // 下载Excel模板
+            downloadExcelTemplate();
+          } else {
+            // 下载CSV模板
+            downloadCSVTemplate();
+          }
+        });
+
+      /**
+       * 下载CSV模板文件
+       */
+      function downloadCSVTemplate() {
+        // CSV模板内容
+        const csvContent = `startTime,endTime,activity
+07:00,08:00,起床 & 早餐
+08:00,12:00,上午工作
+12:00,13:00,午餐休息
+13:00,18:00,下午工作
+18:00,19:00,晚餐
+19:00,21:00,休闲时间
+21:00,22:00,学习充电
+22:00,23:00,准备睡觉
+23:00,07:00,睡眠`;
+
+        // 创建Blob对象
+        const blob = new Blob([csvContent], {
+          type: "text/csv;charset=utf-8;",
+        });
+        const url = URL.createObjectURL(blob);
+
+        // 创建下载链接
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "schedule_template.csv";
+        document.body.appendChild(a);
+
+        // 触发下载
+        a.click();
+
+        // 清理
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // 显示通知
+        showNotification("CSV模板已成功下载", "success");
+      }
+
+      /**
+       * 下载Excel模板文件
+       */
+      function downloadExcelTemplate() {
+        // 检查SheetJS是否可用
+        if (typeof XLSX === "undefined") {
+          showNotification("Excel库未加载，请刷新页面重试", "error");
+          return;
+        }
+
+        try {
+          // 创建模板数据
+          const templateData = [
+            ["startTime", "endTime", "activity"],
+            ["07:00", "08:00", "起床 & 早餐"],
+            ["08:00", "12:00", "上午工作"],
+            ["12:00", "13:00", "午餐休息"],
+            ["13:00", "18:00", "下午工作"],
+            ["18:00", "19:00", "晚餐"],
+            ["19:00", "21:00", "休闲时间"],
+            ["21:00", "22:00", "学习充电"],
+            ["22:00", "23:00", "准备睡觉"],
+            ["23:00", "07:00", "睡眠"],
+          ];
+
+          // 创建工作簿和工作表
+          const wb = XLSX.utils.book_new();
+          const ws = XLSX.utils.aoa_to_sheet(templateData);
+
+          // 设置列宽
+          ws["!cols"] = [
+            { wch: 12 }, // startTime列
+            { wch: 12 }, // endTime列
+            { wch: 20 }, // activity列
+          ];
+
+          // 添加工作表到工作簿
+          XLSX.utils.book_append_sheet(wb, ws, "作息时间表");
+
+          // 生成Excel文件并下载
+          XLSX.writeFile(wb, "schedule_template.xlsx");
+
+          // 显示通知
+          showNotification("Excel模板已成功下载", "success");
+        } catch (error) {
+          console.error("Excel模板生成失败:", error);
+          showNotification("Excel模板生成失败，请重试", "error");
+        }
+      }
+
+      // 初始化预览
+      updatePreview();
+    </script>
+  </body>
+</html>
